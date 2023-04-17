@@ -17,3 +17,12 @@ export class QRCodeModalError extends Error {
         Object.setPrototypeOf(this, QRCodeModalError.prototype);
     }
 }
+
+export class SignRawTransactionNotSupportedError extends Error {
+    constructor() {
+        super();
+
+        // Set the prototype explicitly.
+        Object.setPrototypeOf(this, SignRawTransactionNotSupportedError.prototype);
+    }
+}
