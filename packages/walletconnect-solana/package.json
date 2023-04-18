@@ -25,7 +25,7 @@
         "package": "shx echo '{ \"type\": \"commonjs\" }' > lib/cjs/package.json"
     },
     "devDependencies": {
-        "@solana/web3.js": "^1.52.0",
+        "@solana/web3.js": "^1.63.0",
         "@types/node-fetch": "^2.6.2",
         "@types/pino": "6.3.11",
         "@walletconnect/types": "^2.4.5",
@@ -38,6 +38,6 @@
         "bs58": "^5.0.0"
     },
     "peerDependencies": {
-        "@solana/web3.js": "^1.52.0"
+        "@solana/web3.js": "^1.63.0"
     }
 }
