@@ -1,5 +1,4 @@
-import { Transaction, VersionedTransaction } from '@solana/web3.js';
-import { PublicKey } from '@solana/web3.js';
+import { PublicKey, Transaction, VersionedTransaction } from '@solana/web3.js';
 import QRCodeModal from '@walletconnect/qrcode-modal';
 import WalletConnectClient from '@walletconnect/sign-client';
 import type { EngineTypes, SessionTypes, SignClientTypes } from '@walletconnect/types';
@@ -9,8 +8,8 @@ import { ClientNotInitializedError, QRCodeModalError, SignRawTransactionNotSuppo
 
 export interface WalletConnectWalletAdapterConfig {
     network: WalletConnectChainID;
-    signRawTransactions?: 'required' | undefined;
     options: SignClientTypes.Options;
+    signRawTransaction?: 'required' | undefined;
 }
 
 export enum WalletConnectChainID {
@@ -19,9 +18,9 @@ export enum WalletConnectChainID {
 }
 
 export enum WalletConnectRPCMethods {
+    signMessage = 'solana_signMessage',
     signTransaction = 'solana_signTransaction',
     signRawTransaction = 'solana_signRawTransaction',
-    signMessage = 'solana_signMessage',
 }
 
 interface WalletConnectWalletInit {
@@ -52,6 +51,9 @@ const getConnectParams = (
     };
 };
 
+const isVersionedTransaction = (transaction: Transaction | VersionedTransaction): transaction is VersionedTransaction =>
+    'version' in transaction;
+
 export class WalletConnectWallet {
     private _client: WalletConnectClient | undefined;
     private _session: SessionTypes.Struct | undefined;
@@ -62,7 +64,7 @@ export class WalletConnectWallet {
     constructor(config: WalletConnectWalletAdapterConfig) {
         this._options = config.options;
         this._network = config.network;
-        this._signRawTx = config.signRawTransactions;
+        this._signRawTx = config.signRawTransaction;
     }
 
     async connect(): Promise<WalletConnectWalletInit> {
@@ -133,33 +135,37 @@ export class WalletConnectWallet {
         }
     }
 
-    async signTransaction(transaction: Transaction): Promise<Transaction>;
-    async signTransaction(transaction: VersionedTransaction): Promise<VersionedTransaction>;
-    async signTransaction(
-        transaction: Transaction | VersionedTransaction
-    ): Promise<Transaction | VersionedTransaction> {
+    async signTransaction<T extends Transaction | VersionedTransaction>(transaction: T): Promise<T> {
         if (this._client && this._session) {
             const supportsSignRawTransaction = this._session.namespaces.solana.methods.includes(
                 WalletConnectRPCMethods.signRawTransaction
             );
-            if (transaction instanceof Transaction) {
-                if (supportsSignRawTransaction) {
-                    return this._signRawTransaction(transaction);
-                } else {
-                    return this._signTransaction(transaction);
-                }
-            } else {
+            if (isVersionedTransaction(transaction)) {
                 if (transaction.version === 'legacy') {
                     if (supportsSignRawTransaction) {
                         return this._signRawTransaction(transaction);
                     } else {
-                        const legacyTransaction = Transaction.from(transaction.serialize());
-                        return this._signTransaction(legacyTransaction);
+                        let legacyTransaction = Transaction.from(transaction.serialize());
+                        legacyTransaction = await this._signTransaction(legacyTransaction);
+                        const signature = legacyTransaction.signatures.find((s) =>
+                            s.publicKey.equals(this.publicKey)
+                        )?.signature;
+                        if (!signature) {
+                            throw new Error('Signature not found');
+                        }
+                        transaction.addSignature(this.publicKey, signature);
+                        return transaction;
                     }
                 } else if (supportsSignRawTransaction) {
                     return this._signRawTransaction(transaction);
                 } else {
                     throw new SignRawTransactionNotSupportedError();
+                }
+            } else {
+                if (supportsSignRawTransaction) {
+                    return this._signRawTransaction(transaction);
+                } else {
+                    return this._signTransaction(transaction) as Promise<T>;
                 }
             }
         } else {
@@ -182,22 +188,18 @@ export class WalletConnectWallet {
         }
     }
 
-    private async _signRawTransaction(transaction: Transaction): Promise<Transaction>;
-    private async _signRawTransaction(transaction: VersionedTransaction): Promise<VersionedTransaction>;
-    private async _signRawTransaction(
-        transaction: Transaction | VersionedTransaction
-    ): Promise<Transaction | VersionedTransaction> {
+    private async _signRawTransaction<T extends Transaction | VersionedTransaction>(transaction: T): Promise<T> {
         if (this._client && this._session) {
             let rawTransaction: string;
-            if (transaction instanceof Transaction) {
+            if (isVersionedTransaction(transaction)) {
+                rawTransaction = Buffer.from(transaction.serialize()).toString('base64');
+            } else {
                 rawTransaction = Buffer.from(
                     transaction.serialize({
                         requireAllSignatures: false,
                         verifySignatures: false,
                     })
                 ).toString('base64');
-            } else {
-                rawTransaction = Buffer.from(transaction.serialize()).toString('base64');
             }
 
             const { signature } = await this._client.request<{ signature: string }>({
