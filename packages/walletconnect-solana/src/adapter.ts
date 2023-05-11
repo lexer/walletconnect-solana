@@ -123,7 +123,10 @@ export class WalletConnectWallet {
             let legacyTransaction: Transaction | VersionedTransaction | undefined;
 
             if (isVersionedTransaction(transaction)) {
-                rawTransaction = Buffer.from(transaction.serialize()).toString('base64');
+                rawTransaction = Buffer.from(transaction                    .serialize({
+                    requireAllSignatures: false,
+                    verifySignatures: false,
+                })).toString('base64');
                 if (transaction.version === 'legacy') {
                     // Build Transaction for legacy sign transaction request format
                     legacyTransaction = Transaction.from(transaction.serialize());
